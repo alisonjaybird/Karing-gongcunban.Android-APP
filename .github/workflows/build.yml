@@ -1,5 +1,4 @@
-// 第二次26.0826.2219
-name: Build Android APK (A1 & A2 Coexist)
+name: Build Android APK (A1 & A2)
 
 on:
   workflow_dispatch:
@@ -12,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Prepare vpn-service dependency
+      - name: Prepare vpn-service
         run: |
           if [ -d "vpn-service" ]; then
             cp -r vpn-service ../vpn-service
@@ -39,7 +38,7 @@ jobs:
           fi
 
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -53,69 +52,71 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      # ==================== Build A1 ====================
-      - name: Build A1 APK (com.nebula.karing.a1)
+      - name: Create key.properties (debug signing)
         run: |
-          set -e
-          
-          # 修改 A1 包名
-          echo "修改包名为 com.nebula.karing.a1..."
-          sed -i 's/applicationId = "com.nebula.karing"/applicationId = "com.nebula.karing.a1"/g' android/app/build.gradle.kts || true
-          sed -i 's/applicationId "com.nebula.karing"/applicationId "com.nebula.karing.a1"/g' android/app/build.gradle || true
-          sed -i 's/namespace = "com.nebula.karing"/namespace = "com.nebula.karing.a1"/g' android/app/build.gradle.kts || true
-          
-          echo "开始构建 A1..."
-          flutter build apk --release --no-tree-shake-icons
-          
-          echo "A1 构建完成，输出目录："
-          ls -la build/app/outputs/flutter-apk/
-          
-          # 保存 A1 APK 路径
-          echo "A1_APK_PATH=build/app/outputs/flutter-apk/app-release.apk" >> $GITHUB_ENV
+          cat << 'EOF' > key.properties
+          storeFile.release=${{ runner.temp }}/debug.keystore
+          storePassword.release=android
+          keyAlias.release=androiddebugkey
+          keyPassword.release=android
+          EOF
+          echo "Created key.properties"
 
-      - name: Upload A1 APK
+      - name: Create debug keystore
+        run: |
+          KEYSTORE=${{ runner.temp }}/debug.keystore
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkey -v -dname "CN=Android Debug,O=Android,C=US" \
+              -alias androiddebugkey -keypass android -keystore "$KEYSTORE" \
+              -storepass android -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          echo "Created debug keystore"
+
+      - name: Create sentry.properties (mock)
+        run: |
+          mkdir -p private_for_build/karing/karing/android/sign
+          cat << 'EOF' > private_for_build/karing/karing/android/sign/sentry.properties
+          token=dummy-token-for-ci
+          EOF
+          echo "Created sentry.properties"
+
+      - name: Build A1
+        run: |
+          python3 -c "
+          with open('android/app/build.gradle.kts', 'r') as f:
+              content = f.read()
+          content = content.replace('com.nebula.karing', 'com.nebula.karing.a1')
+          with open('android/app/build.gradle.kts', 'w') as f:
+              f.write(content)
+          print('Modified package to com.nebula.karing.a1')
+          "
+          flutter build apk --release --no-tree-shake-icons
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a1-release.apk
+          ls -la build/app/outputs/flutter-apk/
+
+      - name: Upload A1
         uses: actions/upload-artifact@v4
         with:
-          name: karing-A1-${{ github.sha }}
-          path: ${{ env.A1_APK_PATH }}
-          retention-days: 7
+          name: karing-A1
+          path: build/app/outputs/flutter-apk/app-a1-release.apk
 
-      # ==================== Build A2 ====================
-      - name: Build A2 APK (com.nebula.karing.a2)
+      - name: Restore and Build A2
         run: |
-          set -e
-          
-          # 恢复原始包名
-          echo "恢复原始配置..."
-          git checkout -- android/app/build.gradle.kts android/app/build.gradle 2>/dev/null || true
-          
-          # 修改 A2 包名
-          echo "修改包名为 com.nebula.karing.a2..."
-          sed -i 's/applicationId = "com.nebula.karing"/applicationId = "com.nebula.karing.a2"/g' android/app/build.gradle.kts || true
-          sed -i 's/applicationId "com.nebula.karing"/applicationId "com.nebula.karing.a2"/g' android/app/build.gradle || true
-          sed -i 's/namespace = "com.nebula.karing"/namespace = "com.nebula.karing.a2"/g' android/app/build.gradle.kts || true
-          
-          echo "开始构建 A2..."
+          git checkout -- android/app/build.gradle.kts
+          python3 -c "
+          with open('android/app/build.gradle.kts', 'r') as f:
+              content = f.read()
+          content = content.replace('com.nebula.karing', 'com.nebula.karing.a2')
+          with open('android/app/build.gradle.kts', 'w') as f:
+              f.write(content)
+          print('Modified package to com.nebula.karing.a2')
+          "
           flutter build apk --release --no-tree-shake-icons
-          
-          echo "A2 构建完成，输出目录："
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a2-release.apk
           ls -la build/app/outputs/flutter-apk/
-          
-          # 保存 A2 APK 路径
-          echo "A2_APK_PATH=build/app/outputs/flutter-apk/app-release.apk" >> $GITHUB_ENV
 
-      - name: Upload A2 APK
+      - name: Upload A2
         uses: actions/upload-artifact@v4
         with:
-          name: karing-A2-${{ github.sha }}
-          path: ${{ env.A2_APK_PATH }}
-          retention-days: 7
-
-      # ==================== Summary ====================
-      - name: Build Summary
-        if: success()
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- A1: com.nebula.karing.a1 ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- A2: com.nebula.karing.a2 ✅" >> $GITHUB_STEP_SUMMARY
+          name: karing-A2
+          path: build/app/outputs/flutter-apk/app-a2-release.apk
