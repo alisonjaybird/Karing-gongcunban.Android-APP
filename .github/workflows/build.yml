@@ -72,13 +72,16 @@ jobs:
           fi
           echo "Created debug keystore at $KEYSTORE"
 
-      - name: Create sentry.properties (correct path)
+      - name: Create sentry.properties (root directory)
         run: |
-          mkdir -p android/private_for_build/karing/karing/android/sign
-          cat << 'EOF' > android/private_for_build/karing/karing/android/sign/sentry.properties
+          # 根据错误信息，路径在仓库根目录
+          # /home/runner/work/.../private_for_build/karing/karing/android/sign/sentry.properties
+          mkdir -p private_for_build/karing/karing/android/sign
+          cat << 'EOF' > private_for_build/karing/karing/android/sign/sentry.properties
           token=dummy-token-for-ci
           EOF
-          echo "Created sentry.properties"
+          echo "Created sentry.properties at root directory"
+          ls -la private_for_build/karing/karing/android/sign/
 
       - name: Check source icons
         run: |
@@ -138,7 +141,7 @@ jobs:
           # 恢复原始图标
           echo "Restoring original icons..."
           for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            if [ -f "android/app/src/a1/res/mipmap-${dir}/ic_launcher1.png" ]; then
+            if [ -f "android/app/src/main/res/mipmap-${dir}/ic_launcher.png" ]; then
               rm -f "android/app/src/main/res/mipmap-${dir}/ic_launcher.png"
             fi
           done
