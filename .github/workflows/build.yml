@@ -38,7 +38,7 @@ jobs:
           fi
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -52,6 +52,20 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Check environment
+        run: |
+          echo "=== Flutter version ==="
+          flutter --version
+          echo ""
+          echo "=== Java version ==="
+          java -version
+          echo ""
+          echo "=== Project structure ==="
+          ls -la
+          echo ""
+          echo "=== android/app/ ==="
+          ls -la android/app/
+
       - name: Create key.properties (debug signing)
         run: |
           cat << 'EOF' > key.properties
@@ -61,6 +75,7 @@ jobs:
           keyPassword.release=android
           EOF
           echo "Created key.properties"
+          cat key.properties
 
       - name: Create debug keystore
         run: |
@@ -70,7 +85,8 @@ jobs:
               -alias androiddebugkey -keypass android -keystore "$KEYSTORE" \
               -storepass android -keyalg RSA -keysize 2048 -validity 10000
           fi
-          echo "Created debug keystore"
+          echo "Created debug keystore at $KEYSTORE"
+          ls -la $KEYSTORE
 
       - name: Create sentry.properties (mock)
         run: |
@@ -79,9 +95,14 @@ jobs:
           token=dummy-token-for-ci
           EOF
           echo "Created sentry.properties"
+          cat private_for_build/karing/karing/android/sign/sentry.properties
 
       - name: Build A1
         run: |
+          echo "=== Before modification ==="
+          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
+          echo ""
+          
           python3 -c "
           with open('android/app/build.gradle.kts', 'r') as f:
               content = f.read()
@@ -90,9 +111,24 @@ jobs:
               f.write(content)
           print('Modified package to com.nebula.karing.a1')
           "
-          flutter build apk --release --no-tree-shake-icons
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a1-release.apk
-          ls -la build/app/outputs/flutter-apk/
+          
+          echo "=== After modification ==="
+          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
+          echo ""
+          
+          echo "=== Building A1... ==="
+          flutter build apk --release --no-tree-shake-icons 2>&1
+          
+          echo "=== Build output ==="
+          ls -la build/app/outputs/flutter-apk/ || echo "Output directory not found"
+          
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a1-release.apk
+            echo "A1 APK created successfully"
+          else
+            echo "ERROR: A1 APK not found!"
+            exit 1
+          fi
 
       - name: Upload A1
         uses: actions/upload-artifact@v4
@@ -102,7 +138,14 @@ jobs:
 
       - name: Restore and Build A2
         run: |
+          echo "=== Restoring original config ==="
           git checkout -- android/app/build.gradle.kts
+          echo ""
+          
+          echo "=== Before modification ==="
+          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
+          echo ""
+          
           python3 -c "
           with open('android/app/build.gradle.kts', 'r') as f:
               content = f.read()
@@ -111,9 +154,24 @@ jobs:
               f.write(content)
           print('Modified package to com.nebula.karing.a2')
           "
-          flutter build apk --release --no-tree-shake-icons
-          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a2-release.apk
-          ls -la build/app/outputs/flutter-apk/
+          
+          echo "=== After modification ==="
+          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
+          echo ""
+          
+          echo "=== Building A2... ==="
+          flutter build apk --release --no-tree-shake-icons 2>&1
+          
+          echo "=== Build output ==="
+          ls -la build/app/outputs/flutter-apk/ || echo "Output directory not found"
+          
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a2-release.apk
+            echo "A2 APK created successfully"
+          else
+            echo "ERROR: A2 APK not found!"
+            exit 1
+          fi
 
       - name: Upload A2
         uses: actions/upload-artifact@v4
