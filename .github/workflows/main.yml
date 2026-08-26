@@ -1,0 +1,109 @@
+name: Build Android APK (A1 & A2 Coexist)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare vpn-service dependency
+        run: |
+          if [ -d "vpn-service" ]; then
+            cp -r vpn-service ../vpn-service
+          elif [ -d "packages/vpn-service" ]; then
+            cp -r packages/vpn-service ../vpn-service
+          else
+            mkdir -p ../vpn-service/lib
+            cat << 'EOF' > ../vpn-service/pubspec.yaml
+          name: vpn_service
+          description: Mock vpn service
+          version: 0.0.1
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+          dependencies:
+            flutter:
+              sdk: flutter
+          EOF
+            echo "class VpnService {}" > ../vpn-service/lib/vpn_service.dart
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      # ==================== Build A1 ====================
+      - name: Build A1 APK (com.nebula.karing.a1)
+        run: |
+          # 修改 A1 包名
+          sed -i 's/applicationId = "com.nebula.karing"/applicationId = "com.nebula.karing.a1"/g' android/app/build.gradle.kts || true
+          sed -i 's/applicationId "com.nebula.karing"/applicationId "com.nebula.karing.a1"/g' android/app/build.gradle || true
+          sed -i 's/namespace = "com.nebula.karing"/namespace = "com.nebula.karing.a1"/g' android/app/build.gradle.kts || true
+          
+          # 构建 A1
+          flutter build apk --release --no-tree-shake-icons -v
+          
+          # 保存 A1 APK 路径
+          echo "A1_APK_PATH=build/app/outputs/flutter-apk/app-release.apk" >> $GITHUB_ENV
+
+      - name: Upload A1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: karing-A1-${{ github.sha }}
+          path: ${{ env.A1_APK_PATH }}
+          retention-days: 7
+
+      # ==================== Build A2 ====================
+      - name: Build A2 APK (com.nebula.karing.a2)
+        run: |
+          # 恢复原始包名
+          git checkout -- android/app/build.gradle.kts android/app/build.gradle 2>/dev/null || true
+          
+          # 修改 A2 包名
+          sed -i 's/applicationId = "com.nebula.karing"/applicationId = "com.nebula.karing.a2"/g' android/app/build.gradle.kts || true
+          sed -i 's/applicationId "com.nebula.karing"/applicationId "com.nebula.karing.a2"/g' android/app/build.gradle || true
+          sed -i 's/namespace = "com.nebula.karing"/namespace = "com.nebula.karing.a2"/g' android/app/build.gradle.kts || true
+          
+          # 构建 A2
+          flutter build apk --release --no-tree-shake-icons -v
+          
+          # 保存 A2 APK 路径
+          echo "A2_APK_PATH=build/app/outputs/flutter-apk/app-release.apk" >> $GITHUB_ENV
+
+      - name: Upload A2 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: karing-A2-${{ github.sha }}
+          path: ${{ env.A2_APK_PATH }}
+          retention-days: 7
+
+      # ==================== Summary ====================
+      - name: Build Summary
+        if: success()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | Package Name | Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| A1 | com.nebula.karing.a1 | [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifact/${{ steps.upload-a1-apk.outputs.artifact-id || 'unknown' }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| A2 | com.nebula.karing.a2 | [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifact/${{ steps.upload-a2-apk.outputs.artifact-id || 'unknown' }}) |" >> $GITHUB_STEP_SUMMARY
