@@ -52,20 +52,6 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Check environment
-        run: |
-          echo "=== Flutter version ==="
-          flutter --version
-          echo ""
-          echo "=== Java version ==="
-          java -version
-          echo ""
-          echo "=== Project structure ==="
-          ls -la
-          echo ""
-          echo "=== android/app/ ==="
-          ls -la android/app/
-
       - name: Create key.properties (debug signing)
         run: |
           cat << 'EOF' > key.properties
@@ -75,7 +61,6 @@ jobs:
           keyPassword.release=android
           EOF
           echo "Created key.properties"
-          cat key.properties
 
       - name: Create debug keystore
         run: |
@@ -86,23 +71,29 @@ jobs:
               -storepass android -keyalg RSA -keysize 2048 -validity 10000
           fi
           echo "Created debug keystore at $KEYSTORE"
-          ls -la $KEYSTORE
 
-      - name: Create sentry.properties (mock)
+      - name: Create sentry.properties (correct path)
         run: |
-          mkdir -p private_for_build/karing/karing/android/sign
-          cat << 'EOF' > private_for_build/karing/karing/android/sign/sentry.properties
+          mkdir -p android/private_for_build/karing/karing/android/sign
+          cat << 'EOF' > android/private_for_build/karing/karing/android/sign/sentry.properties
           token=dummy-token-for-ci
           EOF
           echo "Created sentry.properties"
-          cat private_for_build/karing/karing/android/sign/sentry.properties
+
+      - name: Check source icons
+        run: |
+          echo "=== A1 source icons ==="
+          ls -la android/app/src/a1/res/mipmap-xxhdpi/ 2>/dev/null || echo "(not found)"
+          echo ""
+          echo "=== A2 source icons ==="
+          ls -la android/app/src/a2/res/mipmap-xxhdpi/ 2>/dev/null || echo "(not found)"
+          echo ""
+          echo "=== Main icons ==="
+          ls -la android/app/src/main/res/mipmap-xxhdpi/ 2>/dev/null || echo "(not found)"
 
       - name: Build A1
         run: |
-          echo "=== Before modification ==="
-          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
-          echo ""
-          
+          # 修改包名
           python3 -c "
           with open('android/app/build.gradle.kts', 'r') as f:
               content = f.read()
@@ -112,15 +103,18 @@ jobs:
           print('Modified package to com.nebula.karing.a1')
           "
           
-          echo "=== After modification ==="
-          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
-          echo ""
+          # 替换图标 - 从 a1 目录复制到 main 目录
+          echo "Replacing icons for A1..."
+          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "android/app/src/main/res/mipmap-${dir}"
+            if [ -f "android/app/src/a1/res/mipmap-${dir}/ic_launcher1.png" ]; then
+              cp "android/app/src/a1/res/mipmap-${dir}/ic_launcher1.png" "android/app/src/main/res/mipmap-${dir}/ic_launcher.png"
+              echo "Copied ic_launcher1.png -> ic_launcher.png for ${dir}"
+            fi
+          done
           
           echo "=== Building A1... ==="
           flutter build apk --release --no-tree-shake-icons 2>&1
-          
-          echo "=== Build output ==="
-          ls -la build/app/outputs/flutter-apk/ || echo "Output directory not found"
           
           if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
             mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a1-release.apk
@@ -138,14 +132,18 @@ jobs:
 
       - name: Restore and Build A2
         run: |
-          echo "=== Restoring original config ==="
+          # 恢复原始包名
           git checkout -- android/app/build.gradle.kts
-          echo ""
           
-          echo "=== Before modification ==="
-          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
-          echo ""
+          # 恢复原始图标
+          echo "Restoring original icons..."
+          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            if [ -f "android/app/src/a1/res/mipmap-${dir}/ic_launcher1.png" ]; then
+              rm -f "android/app/src/main/res/mipmap-${dir}/ic_launcher.png"
+            fi
+          done
           
+          # 修改包名
           python3 -c "
           with open('android/app/build.gradle.kts', 'r') as f:
               content = f.read()
@@ -155,15 +153,18 @@ jobs:
           print('Modified package to com.nebula.karing.a2')
           "
           
-          echo "=== After modification ==="
-          grep -n "com.nebula.karing" android/app/build.gradle.kts || echo "(not found)"
-          echo ""
+          # 替换图标 - 从 a2 目录复制到 main 目录
+          echo "Replacing icons for A2..."
+          for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "android/app/src/main/res/mipmap-${dir}"
+            if [ -f "android/app/src/a2/res/mipmap-${dir}/ic_launcher2.png" ]; then
+              cp "android/app/src/a2/res/mipmap-${dir}/ic_launcher2.png" "android/app/src/main/res/mipmap-${dir}/ic_launcher.png"
+              echo "Copied ic_launcher2.png -> ic_launcher.png for ${dir}"
+            fi
+          done
           
           echo "=== Building A2... ==="
           flutter build apk --release --no-tree-shake-icons 2>&1
-          
-          echo "=== Build output ==="
-          ls -la build/app/outputs/flutter-apk/ || echo "Output directory not found"
           
           if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
             mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/app-a2-release.apk
