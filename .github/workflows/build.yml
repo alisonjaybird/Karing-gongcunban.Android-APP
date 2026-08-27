@@ -1,4 +1,3 @@
-#7-2
 name: Build Android APK (A1 & A2)
 
 on:
@@ -78,34 +77,28 @@ jobs:
           # 直接修改 build.gradle.kts，跳过 sentry.properties 的读取
           python3 << 'PYEOF'
           with open('android/app/build.gradle.kts', 'r') as f:
-              content = f.read()
+              lines = f.readlines()
           
-          # 注释掉 sentry 配置块
-          content = content.replace('val sentryKeystore = rootProject.file', '# val sentryKeystore = rootProject.file')
-          content = content.replace('val sentryProp = Properties().apply', '# val sentryProp = Properties().apply')
-          
-          # 注释掉整个 sentry {} 块
-          lines = content.split('\n')
           result = []
           in_sentry_block = False
-          skip_until_closing = 0
           
           for line in lines:
-              if 'sentry {' in line:
+              if 'val sentryKeystore' in line or 'val sentryProp' in line:
+                  result.append('# ' + line)
+              elif 'sentry {' in line:
                   in_sentry_block = True
                   result.append('// ' + line)
-                  continue
-              if in_sentry_block:
+              elif in_sentry_block:
                   if line.strip().startswith('}'):
                       result.append('// ' + line)
                       in_sentry_block = False
-                      continue
-                  result.append('// ' + line)
-                  continue
-              result.append(line)
+                  else:
+                      result.append('// ' + line)
+              else:
+                  result.append(line)
           
           with open('android/app/build.gradle.kts', 'w') as f:
-              f.write(''.join(result))
+              f.writelines(result)
           
           print('Disabled sentry configuration')
           PYEOF
