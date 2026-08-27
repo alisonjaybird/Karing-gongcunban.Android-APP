@@ -1,3 +1,4 @@
+// 7
 name: Build Android APK (A1 & A2)
 
 on:
@@ -72,16 +73,48 @@ jobs:
           fi
           echo "Created debug keystore at $KEYSTORE"
 
-      - name: Create sentry.properties (root directory)
+      - name: Disable sentry in build.gradle.kts
         run: |
-          # 根据错误信息，路径在仓库根目录
-          # /home/runner/work/.../private_for_build/karing/karing/android/sign/sentry.properties
-          mkdir -p private_for_build/karing/karing/android/sign
-          cat << 'EOF' > private_for_build/karing/karing/android/sign/sentry.properties
-          token=dummy-token-for-ci
-          EOF
-          echo "Created sentry.properties at root directory"
-          ls -la private_for_build/karing/karing/android/sign/
+          # 直接修改 build.gradle.kts，跳过 sentry.properties 的读取
+          python3 << 'PYEOF'
+          with open('android/app/build.gradle.kts', 'r') as f:
+              content = f.read()
+          
+          # 注释掉 sentry 配置块
+          content = content.replace('val sentryKeystore = rootProject.file', '# val sentryKeystore = rootProject.file')
+          content = content.replace('val sentryProp = Properties().apply', '# val sentryProp = Properties().apply')
+          
+          # 注释掉整个 sentry {} 块
+          lines = content.split('\n')
+          result = []
+          in_sentry_block = False
+          skip_until_closing = 0
+          
+          for line in lines:
+              if 'sentry {' in line:
+                  in_sentry_block = True
+                  result.append('// ' + line)
+                  continue
+              if in_sentry_block:
+                  if line.strip().startswith('}'):
+                      result.append('// ' + line)
+                      in_sentry_block = False
+                      continue
+                  result.append('// ' + line)
+                  continue
+              result.append(line)
+          
+          with open('android/app/build.gradle.kts', 'w') as f:
+              f.write(''.join(result))
+          
+          print('Disabled sentry configuration')
+          PYEOF
+
+      - name: Verify sentry.properties exists
+        run: |
+          echo "=== Checking sentry.properties ==="
+          ls -la private_for_build/karing/karing/android/sign/sentry.properties || echo "(not found)"
+          cat private_for_build/karing/karing/android/sign/sentry.properties
 
       - name: Check source icons
         run: |
