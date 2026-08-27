@@ -1,4 +1,4 @@
-#7
+#7-2
 name: Build Android APK (A1 & A2)
 
 on:
@@ -109,12 +109,6 @@ jobs:
           
           print('Disabled sentry configuration')
           PYEOF
-
-      - name: Verify sentry.properties exists
-        run: |
-          echo "=== Checking sentry.properties ==="
-          ls -la private_for_build/karing/karing/android/sign/sentry.properties || echo "(not found)"
-          cat private_for_build/karing/karing/android/sign/sentry.properties
 
       - name: Check source icons
         run: |
